@@ -114,11 +114,11 @@ func (s *Service) Submit(
 		lease.ProbeID = result.ID
 		state.Leases[leaseID] = lease
 		if node.State == domain.NodeLeased {
-			domain.RecordNodeTimeline(state, node)
 			node.State = domain.NodeReady
 			node.Version++
 			node.UpdatedAt = now
 			state.Nodes[node.ID] = node
+			domain.RecordNodeTimeline(state, node)
 		}
 		store.AddAudit(state, s.ids, "probe", result.ID, "stored", now, map[string]any{
 			"lease_id": leaseID,

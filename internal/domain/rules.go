@@ -215,14 +215,37 @@ func ProjectNodeTimelines(state *State, nodes []ResolverNode) []ResolverNode {
 }
 
 // RebuildNodeTimelines restores the node timeline registry whenever a snapshot
-// is loaded by replaying each node from its enrollment baseline.
+// is loaded. The registry persisted with the snapshot is authoritative so the
+// recorded business time and version survive a restart; it is only repaired
+// forward from each node aggregate's current time and version (for example when
+// an older snapshot lacks an entry) and never reset to the enrollment baseline.
 func RebuildNodeTimelines(state *State) {
 	if state == nil {
 		return
 	}
-	timelines := make(map[string]NodeTimeline, len(state.Nodes))
+	if state.NodeTimelines == nil {
+		state.NodeTimelines = make(map[string]NodeTimeline, len(state.Nodes))
+	}
+	timelines := state.NodeTimelines
 	for id, node := range state.Nodes {
-		timelines[id] = NodeTimeline{UpdatedAt: node.CreatedAt.UTC(), Version: 1}
+		recorded, ok := timelines[id]
+		if !ok {
+			timelines[id] = NodeTimeline{UpdatedAt: node.UpdatedAt.UTC(), Version: node.Version}
+			continue
+		}
+		merged := recorded
+		if node.UpdatedAt.UTC().After(merged.UpdatedAt) {
+			merged.UpdatedAt = node.UpdatedAt.UTC()
+		}
+		if node.Version > merged.Version {
+			merged.Version = node.Version
+		}
+		timelines[id] = merged
+	}
+	for id := range timelines {
+		if _, ok := state.Nodes[id]; !ok {
+			delete(timelines, id)
+		}
 	}
 	state.NodeTimelines = timelines
 }

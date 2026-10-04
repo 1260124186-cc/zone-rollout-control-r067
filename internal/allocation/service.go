@@ -159,11 +159,11 @@ func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease
 		lease.FinishedAt = &finishedAt
 		state.Leases[leaseID] = lease
 		if node.State == domain.NodeLeased {
-			domain.RecordNodeTimeline(state, node)
 			node.State = domain.NodeReady
 			node.Version++
 			node.UpdatedAt = now
 			state.Nodes[node.ID] = node
+			domain.RecordNodeTimeline(state, node)
 		}
 		store.AddAudit(state, s.ids, "lease", leaseID, "released", now, nil)
 		result = lease
@@ -193,11 +193,11 @@ func expireLeases(state *domain.State, now time.Time) int {
 		lease.FinishedAt = &finishedAt
 		state.Leases[leaseID] = lease
 		if node, ok := state.Nodes[lease.NodeID]; ok && node.State == domain.NodeLeased {
-			domain.RecordNodeTimeline(state, node)
 			node.State = domain.NodeReady
 			node.Version++
 			node.UpdatedAt = now
 			state.Nodes[node.ID] = node
+			domain.RecordNodeTimeline(state, node)
 		}
 		count++
 	}
