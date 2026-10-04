@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "name": "zone-rollout-control",
+  "project_shape": "backend",
+  "modules": [
+    {
+      "id": "entry",
+      "path": "cmd/zrc",
+      "responsibility": "server process startup, flags, and graceful shutdown"
+    },
+    {
+      "id": "httpapi",
+      "path": "internal/httpapi",
+      "responsibility": "HTTP routes, strict decoding, middleware, and error mapping"
+    },
+    {
+      "id": "plan",
+      "path": "internal/plan",
+      "responsibility": "plan lifecycle and immutable zone revision orchestration"
+    },
+    {
+      "id": "fleet",
+      "path": "internal/fleet",
+      "responsibility": "resolver node enrollment, uniqueness checks, and paginated reads"
+    },
+    {
+      "id": "allocation",
+      "path": "internal/allocation",
+      "responsibility": "node selection, idempotent lease groups, and resource lifetime"
+    },
+    {
+      "id": "probe",
+      "path": "internal/probe",
+      "responsibility": "probe validation, idempotent persistence, and lease completion"
+    },
+    {
+      "id": "assessment",
+      "path": "internal/assessment",
+      "responsibility": "probe aggregation, deterministic verdicts, and latest result reads"
+    },
+    {
+      "id": "domain",
+      "path": "internal/domain",
+      "responsibility": "entities, DNS value validation, transitions, and stable errors"
+    },
+    {
+      "id": "storage",
+      "path": "internal/store",
+      "responsibility": "copy-on-write transactions and atomic JSON snapshots"
+    },
+    {
+      "id": "platform",
+      "path": "internal/platform",
+      "responsibility": "clock, identifiers, cursors, and process locking"
+    },
+    {
+      "id": "runtime-probe",
+      "path": "internal/workflowprobe",
+      "responsibility": "bounded workflow verification through real HTTP handlers"
+    }
+  ],
+  "complexity": {
+    "mechanisms": [
+      "state_transition",
+      "optimistic_concurrency",
+      "idempotency",
+      "resource_lifecycle",
+      "atomic_persistence",
+      "error_propagation",
+      "validation_boundary",
+      "concurrency"
+    ]
+  },
+  "workflows": [
+    {
+      "id": "plan-revision-lifecycle",
+      "name": "Plan and revision lifecycle",
+      "entry": "PUT /v1/plans -> revisions -> activate -> complete",
+      "steps": [
+        "validate plan limits and zone name",
+        "append a strictly increasing immutable revision",
+        "activate only from draft with a matching version",
+        "complete only from active with a matching version"
+      ],
+      "success": "the plan becomes completed and preserves its revision history",
+      "failure": "duplicate serials, stale versions, and invalid transitions return stable errors without state changes",
+      "verification": "workflowprobe plan-revision-lifecycle creates, revises, activates, completes, and rejects a repeated transition",
+      "module_ids": [
+        "httpapi",
+        "plan",
+        "domain",
+        "storage"
+      ]
+    },
+    {
+      "id": "node-lease-allocation",
+      "name": "Node lease allocation",
+      "entry": "PATCH /v1/plans/{id}/leases",
+      "steps": [
+        "validate the active plan and requested lease window",
+        "expire due leases and select ready nodes by region",
+        "mark nodes leased and create one bounded lease per node",
+        "replay the idempotent allocation group"
+      ],
+      "success": "each selected node receives one claimed lease and the request replay returns the same group",
+      "failure": "unavailable nodes and request-key reuse with different inputs return conflicts without partial writes",
+      "verification": "workflowprobe node-lease-allocation enrolls nodes, allocates a group, replays it, and rejects an exhausted allocation",
+      "module_ids": [
+        "httpapi",
+        "allocation",
+        "plan",
+        "domain",
+        "storage"
+      ]
+    },
+    {
+      "id": "probe-ingestion",
+      "name": "Idempotent probe ingestion",
+      "entry": "PATCH /v1/leases/{id}/probes",
+      "steps": [
+        "validate the claimed lease, request key, serial, latency, and time",
+        "compute the payload fingerprint",
+        "persist one probe and complete the lease",
+        "return the original probe for an identical replay"
+      ],
+      "success": "one probe is stored, the lease becomes reported, and the node returns to ready",
+      "failure": "expired leases, inactive plans, and same-key different-payload requests fail atomically",
+      "verification": "workflowprobe probe-ingestion submits and replays a probe, then confirms conflicting content and release are rejected",
+      "module_ids": [
+        "httpapi",
+        "probe",
+        "allocation",
+        "domain",
+        "storage"
+      ]
+    },
+    {
+      "id": "consistency-assessment",
+      "name": "Consistency assessment",
+      "entry": "PATCH /v1/plans/{id}/assessments",
+      "steps": [
+        "collect probes for the latest zone revision",
+        "group observations by resolver node",
+        "calculate success ratio and maximum latency",
+        "persist the immutable verdict and update the plan summary"
+      ],
+      "success": "a deterministic consistent or review_required verdict is created and available as the latest assessment",
+      "failure": "missing revisions, absent probes, request-key conflicts, and persistence errors produce no partial summary",
+      "verification": "workflowprobe consistency-assessment creates consistent and review cases, retrieves the latest result, and checks replay",
+      "module_ids": [
+        "httpapi",
+        "assessment",
+        "probe",
+        "domain",
+        "storage"
+      ]
+    }
+  ]
+}

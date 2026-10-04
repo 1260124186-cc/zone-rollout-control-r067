@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "language": "go",
+  "project_shape": "backend",
+  "source_extensions": [
+    ".go"
+  ],
+  "build_command": "go build ./...",
+  "testing": "deferred",
+  "workflow_checks": [
+    {
+      "workflow_id": "plan-revision-lifecycle",
+      "command": "go run ./cmd/workflowprobe plan-revision-lifecycle"
+    },
+    {
+      "workflow_id": "node-lease-allocation",
+      "command": "go run ./cmd/workflowprobe node-lease-allocation"
+    },
+    {
+      "workflow_id": "probe-ingestion",
+      "command": "go run ./cmd/workflowprobe probe-ingestion"
+    },
+    {
+      "workflow_id": "consistency-assessment",
+      "command": "go run ./cmd/workflowprobe consistency-assessment"
+    }
+  ]
+}
